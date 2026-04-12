@@ -43,13 +43,13 @@ def main() -> int:
     py = sys.executable
 
     if not args.skip_login:
-        run([py, "-u", "test_login.py"])
+        run([py, "-u", "fetch_code/test_login.py"])
 
     # Incremental updates for the files that exist
-    run([py, "-u", "update_incremental.py", "--only", "indices15", "--workers", str(args.workers), "--delay", str(args.delay)])
-    run([py, "-u", "update_incremental.py", "--only", "fo15", "--workers", str(args.workers), "--delay", str(args.delay)])
-    run([py, "-u", "update_incremental.py", "--only", "indices_eod", "--workers", str(args.workers), "--delay", str(args.delay)])
-    run([py, "-u", "update_incremental.py", "--only", "fo_eod", "--workers", str(args.workers), "--delay", str(args.delay)])
+    run([py, "-u", "fetch_code/update_incremental.py", "--only", "indices15", "--workers", str(args.workers), "--delay", str(args.delay)])
+    run([py, "-u", "fetch_code/update_incremental.py", "--only", "fo15", "--workers", str(args.workers), "--delay", str(args.delay)])
+    run([py, "-u", "fetch_code/update_incremental.py", "--only", "indices_eod", "--workers", str(args.workers), "--delay", str(args.delay)])
+    run([py, "-u", "fetch_code/update_incremental.py", "--only", "fo_eod", "--workers", str(args.workers), "--delay", str(args.delay)])
 
     # Derived timeframes for NIFTY 50 index (if folders exist)
     # Derived timeframes regenerated from 15-min sources (indices + nifty50 + other, if such folders exist)

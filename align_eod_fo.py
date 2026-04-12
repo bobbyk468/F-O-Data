@@ -74,7 +74,7 @@ def main():
     data_dir = args.fo_stocks_dir or os.path.join(base, "data")  # 15min under data/nifty50/15min & data/other/15min
     eod_fo_dir = args.eod_fo_dir or data_dir  # EOD under data/nifty50/eod & data/other/eod
 
-    from fetch_eod_90d import get_fo_symbol_to_token, run_batch_full, run_batch, _load_nifty50_symbols
+    from fetch_code.fetch_eod_90d import get_fo_symbol_to_token, run_batch_full, run_batch, _load_nifty50_symbols
     from datetime import datetime, timedelta
 
     from jugaad_trader import Zerodha

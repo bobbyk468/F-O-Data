@@ -4,7 +4,10 @@ This repository holds **F&O and index OHLCV datasets** (15m and other timeframes
 
 - **`data/`** — `indices/` (1m, 15m, 30m, etc.), `nifty50/15min`, `other/15min`, EOD where applicable  
 - **`output/`** — derived series (e.g. daily CPR width + SuperTrend)  
-- **Scripts** — fetch, resample, verify, and alignment helpers in the repo root  
+- **`fetch_code/`** — Zerodha **fetch and incremental update** scripts (writes to `data/`). See [`fetch_code/README.md`](fetch_code/README.md).  
+- **`config/nifty50_symbols.txt`** — Nifty 50 list (routes F&O files into `data/nifty50/` vs `data/other/`).  
+- **Root shims** — short `fetch_*.py` / `update_incremental.py` / shell scripts delegate to `fetch_code/` for backwards compatibility.  
+- **Other scripts** — resample, verify, alignment at repo root  
 
 Upstream library docs: https://marketsetup.in/documentation/jugaad-trader/
 

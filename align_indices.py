@@ -58,7 +58,7 @@ def main():
     dir_eod = os.path.join(data_dir, "indices", "eod")
 
     # Known index symbols -> slug (for mapping file base back to symbol)
-    from fetch_eod_90d import MAIN_AND_SECTOR_SYMBOLS
+    from fetch_code.fetch_eod_90d import MAIN_AND_SECTOR_SYMBOLS
 
     symbol_to_slug = {s: slug(s) for s in MAIN_AND_SECTOR_SYMBOLS}
     slug_to_symbol = {v: k for k, v in symbol_to_slug.items()}
@@ -109,7 +109,7 @@ def main():
 
     if args.fetch_missing_eod and missing_eod_symbols:
         # Resolve to symbols that exist in NSE indices
-        from fetch_eod_90d import get_index_symbol_to_token, run_batch_full, run_batch
+        from fetch_code.fetch_eod_90d import get_index_symbol_to_token, run_batch_full, run_batch
 
         index_map = get_index_symbol_to_token(kite)
         to_fetch = [s for s in missing_eod_symbols if s in index_map]
@@ -126,7 +126,7 @@ def main():
             print("No missing EOD symbols found in NSE index list.")
 
     if args.fetch_missing_15min and missing_15min_symbols:
-        from fetch_all_indices_15min import (
+        from fetch_code.fetch_all_indices_15min import (
             get_index_instruments,
             fetch_one_index,
             _worker_fetch_one,

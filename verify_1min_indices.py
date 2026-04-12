@@ -22,7 +22,7 @@ import pandas as pd
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-from fetch_all_indices_1min import MAIN_AND_SECTOR_SYMBOLS, slug  # noqa: E402
+from fetch_code.fetch_all_indices_1min import MAIN_AND_SECTOR_SYMBOLS, slug  # noqa: E402
 
 IST = "Asia/Kolkata"
 # Full cash session 1-min bars: 09:15 .. 15:29 inclusive = 375 bars

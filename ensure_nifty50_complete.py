@@ -10,7 +10,7 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 NIFTY50_FILE = os.path.join(REPO_ROOT, "config", "nifty50_symbols.txt")
 
 
@@ -88,13 +88,18 @@ def main():
 
     if args.fetch_15min and missing_15min:
         import subprocess
-        cmd = [sys.executable, os.path.join(base, "fetch_fo_stocks_15min.py"), "--symbols", ",".join(missing_15min)]
+        cmd = [
+            sys.executable,
+            os.path.join(base, "fetch_code", "fetch_fo_stocks_15min.py"),
+            "--symbols",
+            ",".join(missing_15min),
+        ]
         print("Running:", " ".join(cmd))
         subprocess.run(cmd, check=True)
         print("15min fetch done for:", missing_15min)
 
     if args.fetch_eod and missing_eod:
-        from fetch_eod_90d import get_fo_symbol_to_token, run_batch_full, _load_nifty50_symbols
+        from fetch_code.fetch_eod_90d import get_fo_symbol_to_token, run_batch_full, _load_nifty50_symbols
         from jugaad_trader import Zerodha
         kite = Zerodha()
         kite.set_access_token()
