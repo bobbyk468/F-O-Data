@@ -1,0 +1,8 @@
+requests
+websockets
+kiteconnect
+beautifulsoup4
+Click
+six
+pyotp
+loguru

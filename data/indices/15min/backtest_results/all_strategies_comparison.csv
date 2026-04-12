@@ -1,0 +1,6 @@
+Strategy,Total Return (%),Max Drawdown (%),Sharpe,Trades,Win Rate (%),Risk/Reward,DD < 10%
+S1: Pivot Breakout,31.57,-8.41,0.78,1082,56.56,0.89,PASS
+S2: ORB (30-min),28.67,-12.4,0.42,1611,53.51,0.93,FAIL
+S3: Camarilla,-23.26,-38.16,-0.3,1646,60.15,0.62,FAIL
+S4: Confluence,-62.65,-72.0,-0.51,2411,49.19,0.93,FAIL
+S5: Combined (Vote),20.65,-7.26,0.67,545,56.15,0.95,PASS
