@@ -24,7 +24,8 @@ jtrader zerodha startsession   # or: .venv/bin/python fetch_code/test_login.py
 | Nifty 50 index 15m | `.venv/bin/python fetch_code/fetch_nifty50_15min.py` |
 | All F&O underlyings 15m | `.venv/bin/python fetch_code/fetch_fo_stocks_15min.py --workers 4` |
 | All F&O underlyings **1m** (nifty50/1min + other/1min) | `.venv/bin/python fetch_code/fetch_fo_stocks_1min.py --workers 6 --resume` |
-| EOD (indices + F&O) | `.venv/bin/python fetch_code/fetch_eod_90d.py --only all --days 90 --workers 4` |
+| EOD last 90d (indices + F&O) | `.venv/bin/python fetch_code/fetch_eod_90d.py --only all --days 90 --workers 4` |
+| EOD **full history** (from Zerodha availability) | `.venv/bin/python fetch_code/fetch_eod_90d.py --only all --full-history --workers 6` (optional `--full-history-start 2000-01-01`) |
 
 Shell scripts assume the virtualenv is **`.venv` at repo root** and set `ROOT` to the parent of `fetch_code/`.
 

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Fetch EOD (daily) data for:
-  - Last 90 days only (default), or
-  - Full history from 2015 in 90-day intervals (--full-history)
+  - Last N days only (default 90), or
+  - Full history in 90-day API chunks (--full-history), from --full-history-start
+    (default 2000-01-01). Zerodha only returns bars that exist (listing / exchange availability).
+
 For: F&O stocks + indexes/sectors. Multiprocessing, delay 0.0035.
 """
 # --- fetch_code/: data/ and jugaad_trader/ live at repository root ---
@@ -29,8 +31,10 @@ from multiprocessing import Pool
 
 EOD_DAYS = 90
 DELAY_SEC = 0.0035
-# Full history: from 2015 (EOD available from then)
-FULL_HISTORY_START = date(2015, 1, 1)
+# First calendar day to *request* for --full-history; API returns only existing daily bars.
+# 2000-01-01 is safely before NSE/Zerodha coverage for most symbols (avoids guessing 2015 only).
+DEFAULT_FULL_HISTORY_START = date(2000, 1, 1)
+FULL_HISTORY_START = DEFAULT_FULL_HISTORY_START  # back-compat for imports
 
 # Same main + sector list as 15min indices script
 MAIN_AND_SECTOR_SYMBOLS = [
@@ -175,13 +179,14 @@ def _worker_fetch(args):
 
 
 def _worker_fetch_full(args):
-    """Fetch from 2015 to today in 90-day chunks. args = (token, symbol, out_path, delay_sec)."""
-    instrument_token, symbol, out_path, delay_sec = args
+    """Fetch from history_start to today in 90-day chunks.
+    args = (token, symbol, out_path, delay_sec, (y,m,d) history_start)."""
+    instrument_token, symbol, out_path, delay_sec, start_tup = args
+    from_date = date(start_tup[0], start_tup[1], start_tup[2])
     from jugaad_trader import Zerodha
     kite = Zerodha()
     kite.set_access_token()
     to_date = datetime.now().date()
-    from_date = FULL_HISTORY_START
     by_ts = {}
     period_start = from_date
     while period_start <= to_date:
@@ -225,8 +230,19 @@ def run_batch(kite, symbol_to_token, from_date, to_date, out_dir, workers, delay
             print(f"  {sym}: {n} days")
 
 
-def run_batch_full(kite, symbol_to_token, out_dir, workers, delay_sec, label="", nifty50_symbols=None):
-    """Fetch from 2015 to today in 90-day intervals per symbol."""
+def run_batch_full(
+    kite,
+    symbol_to_token,
+    out_dir,
+    workers,
+    delay_sec,
+    label="",
+    nifty50_symbols=None,
+    history_start: date | None = None,
+):
+    """Fetch from history_start (default DEFAULT_FULL_HISTORY_START) to today in 90-day intervals per symbol."""
+    start = history_start or DEFAULT_FULL_HISTORY_START
+    start_tup = (start.year, start.month, start.day)
     tasks = []
     for sym in sorted(symbol_to_token.keys()):
         token = symbol_to_token[sym]
@@ -237,14 +253,14 @@ def run_batch_full(kite, symbol_to_token, out_dir, workers, delay_sec, label="",
             out_path = os.path.join(out_dir, sub, "eod", f"{name}_eod.csv")
         else:
             out_path = os.path.join(out_dir, f"{name}_eod.csv")
-        tasks.append((token, sym, out_path, delay_sec))
+        tasks.append((token, sym, out_path, delay_sec, start_tup))
     if not tasks:
         print(f"  No symbols for {label}")
         return
     if workers <= 1:
         to_date = datetime.now().date()
-        from_date = FULL_HISTORY_START
-        for (token, sym, out_path, d) in tasks:
+        from_date = start
+        for (token, sym, out_path, d, _st) in tasks:
             by_ts = {}
             period_start = from_date
             while period_start <= to_date:
@@ -301,7 +317,14 @@ def main():
     parser.add_argument(
         "--full-history",
         action="store_true",
-        help="Fetch from 2015 to today in 90-day intervals (default: last 90 days only).",
+        help="Fetch from --full-history-start to today in 90-day intervals (default: last --days only).",
+    )
+    parser.add_argument(
+        "--full-history-start",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=f"First calendar date to request with --full-history (default: {DEFAULT_FULL_HISTORY_START.isoformat()}). "
+        "Earlier requests still only return data Zerodha has.",
     )
     parser.add_argument(
         "--symbols",
@@ -331,8 +354,15 @@ def main():
         workers = max(2, workers)  # force multiprocessing for full-history (faster)
     delay_sec = max(0.001, args.delay)
 
+    history_start = DEFAULT_FULL_HISTORY_START
+    if args.full_history_start:
+        history_start = datetime.strptime(args.full_history_start, "%Y-%m-%d").date()
+
     if args.full_history:
-        print(f"EOD fetch: full history from {FULL_HISTORY_START} to {to_date} (90-day intervals)")
+        print(
+            f"EOD fetch: full history from {history_start} to {to_date} "
+            f"({EOD_DAYS}-day API chunks; Zerodha returns only existing bars)"
+        )
     else:
         print(f"EOD fetch: last {args.days} days ({from_date} to {to_date})")
     print(f"Output: data/indices/eod, data/nifty50/eod, data/other/eod (workers={workers}, delay={delay_sec}s)\n")
@@ -346,7 +376,15 @@ def main():
         }
         print(f"Indices & sectors ({len(indices_symbols)} symbols) -> {indices_dir}")
         if args.full_history:
-            run_batch_full(kite, indices_symbols, indices_dir, workers, delay_sec, "indices")
+            run_batch_full(
+                kite,
+                indices_symbols,
+                indices_dir,
+                workers,
+                delay_sec,
+                "indices",
+                history_start=history_start,
+            )
         else:
             run_batch(
                 kite,
@@ -374,7 +412,16 @@ def main():
         else:
             print(f"F&O stocks ({len(fo_map)} symbols) -> {fo_dir}")
         if args.full_history:
-            run_batch_full(kite, fo_map, fo_dir, workers, delay_sec, "fo", nifty50_symbols=fo_nifty50 or None)
+            run_batch_full(
+                kite,
+                fo_map,
+                fo_dir,
+                workers,
+                delay_sec,
+                "fo",
+                nifty50_symbols=fo_nifty50 or None,
+                history_start=history_start,
+            )
         else:
             run_batch(
                 kite,
