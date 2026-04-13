@@ -48,14 +48,14 @@ from typing import Iterable, Optional
 
 from jugaad_trader import Zerodha
 
-from fetch_all_indices_15min import (
+from fetch_code.fetch_all_indices_15min import (
     CHUNK_DAYS,
     fetch_15min_for_instrument,
     get_index_instruments,
     slug as slug_15,
 )
-from fetch_fo_stocks_15min import get_fo_equity_symbol_to_token
-from fetch_eod_90d import (
+from fetch_code.fetch_fo_stocks_15min import get_fo_equity_symbol_to_token
+from fetch_code.fetch_eod_90d import (
     fetch_eod_one,
     get_fo_symbol_to_token,
     get_index_symbol_to_token,

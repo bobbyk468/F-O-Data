@@ -24,7 +24,7 @@ from multiprocessing import Pool
 # paths: bootstrap above
 
 # Reuse fetch logic from indices script
-from fetch_all_indices_15min import (
+from fetch_code.fetch_all_indices_15min import (
     fetch_one_index,
     _worker_fetch_one,
     DEFAULT_START_DATE,
