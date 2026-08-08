@@ -21,13 +21,14 @@ from repo_paths import REPO_ROOT  # noqa: E402
 import os
 import re
 import sys
-import csv
 import time
 import argparse
 from datetime import datetime, timedelta, date
 from multiprocessing import Pool
 
 # paths: bootstrap above
+
+from ohlc_indicators import write_eod_enriched_csv
 
 EOD_DAYS = 90
 DELAY_SEC = 0.0035
@@ -147,21 +148,10 @@ def fetch_eod_one(kite, instrument_token, from_date, to_date, delay_sec=0.0035):
 
 
 def save_eod_csv(candles, out_path):
+    """Write EOD CSV with CPR, SuperTrend(25,7), Bollinger(25,2)."""
     if not candles:
         return 0
-    with open(out_path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["date", "open", "high", "low", "close", "volume"])
-        for c in candles:
-            w.writerow([
-                c.get("date"),
-                c.get("open"),
-                c.get("high"),
-                c.get("low"),
-                c.get("close"),
-                c.get("volume", 0),
-            ])
-    return len(candles)
+    return write_eod_enriched_csv(out_path, candles)
 
 
 def _worker_fetch(args):

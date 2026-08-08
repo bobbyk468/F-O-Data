@@ -19,13 +19,14 @@ from repo_paths import REPO_ROOT  # noqa: E402
 import os
 import re
 import sys
-import csv
 import time
 import argparse
 from datetime import datetime, timedelta, date
 from multiprocessing import Pool
 
 # paths: bootstrap above
+
+from ohlc_indicators import write_15min_enriched_csv
 
 # Max possible range: Zerodha 15min index data available from 2015-09-01 (per Kite API)
 # 100 bars per request ≈ 4 trading days for 15min
@@ -135,33 +136,15 @@ def fetch_one_index(kite, instrument_token, tradingsymbol, from_date, to_date, o
             if ts is not None:
                 by_ts[ts] = c
         print(f"{len(candles)}", flush=True)
-        # Write CSV after each period so we keep data if interrupted
+        # Write CSV after each period so we keep data if interrupted (includes CPR, ST, BB)
         if by_ts:
             sorted_candles = [by_ts[k] for k in sorted(by_ts)]
-            with open(out_path, "w", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(["date", "open", "high", "low", "close", "volume"])
-                for c in sorted_candles:
-                    w.writerow([
-                        c.get("date"), c.get("open"), c.get("high"),
-                        c.get("low"), c.get("close"), c.get("volume", 0),
-                    ])
+            write_15min_enriched_csv(out_path, sorted_candles)
 
     if not by_ts:
         return 0
     sorted_candles = [by_ts[k] for k in sorted(by_ts)]
-    with open(out_path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["date", "open", "high", "low", "close", "volume"])
-        for c in sorted_candles:
-            w.writerow([
-                c.get("date"),
-                c.get("open"),
-                c.get("high"),
-                c.get("low"),
-                c.get("close"),
-                c.get("volume", 0),
-            ])
+    write_15min_enriched_csv(out_path, sorted_candles)
     print(f"  -> {out_path} ({len(sorted_candles)} candles)")
     return len(sorted_candles)
 

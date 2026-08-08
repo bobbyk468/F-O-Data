@@ -6,3 +6,6 @@ Click
 six
 pyotp
 loguru
+matplotlib
+pandas
+numpy

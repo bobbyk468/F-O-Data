@@ -13,6 +13,10 @@ Supported:
 - F&O 15min:       data/nifty50/15min/*_15min.csv and data/other/15min/*_15min.csv
 - F&O EOD:         data/nifty50/eod/*_eod.csv and data/other/eod/*_eod.csv
 
+After merge, each file is rewritten with CPR (prior session), SuperTrend(25,7),
+and Bollinger(25,2) on the full series. For a one-time backfill on disk without
+fetching, use fetch_code/backfill_ohlc_indicators.py.
+
 Usage:
   .venv/bin/python -u update_incremental.py --only indices15
   .venv/bin/python -u update_incremental.py --only fo15 --workers 4
@@ -34,7 +38,6 @@ for _d in (_REPO, _FC):
 from repo_paths import REPO_ROOT  # noqa: E402
 
 import argparse
-import csv
 import os
 import sys
 import time
@@ -47,6 +50,17 @@ from typing import Iterable, Optional
 # paths: bootstrap above
 
 from jugaad_trader import Zerodha
+
+import pandas as pd
+
+from ohlc_indicators import (
+    COLS_15M,
+    COLS_EOD,
+    coerce_datetime_ist,
+    enrich_15min_df,
+    enrich_eod_df,
+    read_base_ohlcv_15m,
+)
 
 from fetch_code.fetch_all_indices_15min import (
     CHUNK_DAYS,
@@ -124,40 +138,6 @@ def last_csv_datetime(path: Path) -> Optional[datetime]:
     return None
 
 
-def _merge_write_csv(path: Path, rows: list[list], header: list[str]) -> int:
-    # Build map by datetime for dedupe
-    by_ts = {}
-    for r in rows:
-        dt = _parse_dt(r[0])
-        if dt is None:
-            continue
-        by_ts[dt] = r
-    out = [by_ts[k] for k in sorted(by_ts)]
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.parent.mkdir(parents=True, exist_ok=True)
-    with open(tmp, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(header)
-        w.writerows(out)
-    os.replace(tmp, path)
-    return len(out)
-
-
-def _read_existing_rows(path: Path) -> tuple[list[str], list[list]]:
-    if not path.is_file():
-        return (["date", "open", "high", "low", "close", "volume"], [])
-    with open(path, "r", newline="") as f:
-        r = csv.reader(f)
-        try:
-            header = next(r)
-        except StopIteration:
-            return (["date", "open", "high", "low", "close", "volume"], [])
-        rows = [row for row in r if row and any(cell.strip() for cell in row)]
-    if not header:
-        header = ["date", "open", "high", "low", "close", "volume"]
-    return (header, rows)
-
-
 def ensure_session():
     kite = Zerodha()
     kite.set_access_token()
@@ -188,6 +168,7 @@ class UpdateJob:
     token: int
     out_path: str
     delay: float
+    to_date: Optional[date] = None
 
 
 def _update_indices15_one(job: UpdateJob) -> tuple[str, int]:
@@ -195,20 +176,30 @@ def _update_indices15_one(job: UpdateJob) -> tuple[str, int]:
     kite.set_access_token()
     out_path = Path(job.out_path)
     last_dt = last_csv_datetime(out_path)
-    to_date = datetime.now().date()
+    to_date = job.to_date or datetime.now().date()
     if last_dt is None:
         # No file or empty => fetch nothing here; use main full scripts for bootstrap.
         return (job.symbol, 0)
     # Fetch from last_date-1 day to handle partial/trading gaps
-    from_date = (last_dt.date() - timedelta(days=1))
+    from_date = last_dt.date() - timedelta(days=1)
     candles = fetch_15min_for_instrument(kite, job.token, from_date, to_date, delay_sec=job.delay)
-    header, existing = _read_existing_rows(out_path)
-    appended = [
-        [c.get("date"), c.get("open"), c.get("high"), c.get("low"), c.get("close"), c.get("volume", 0)]
-        for c in (candles or [])
-    ]
-    n = _merge_write_csv(out_path, existing + appended, header)
-    return (job.symbol, n)
+    try:
+        old = read_base_ohlcv_15m(out_path)
+    except Exception:
+        old = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+    appended = pd.DataFrame(
+        [
+            [c.get("date"), c.get("open"), c.get("high"), c.get("low"), c.get("close"), c.get("volume", 0)]
+            for c in (candles or [])
+        ],
+        columns=["date", "open", "high", "low", "close", "volume"],
+    )
+    full = pd.concat([old, appended], ignore_index=True)
+    full["date"] = coerce_datetime_ist(full["date"])
+    full = full.sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
+    full = enrich_15min_df(full)
+    full[COLS_15M].to_csv(out_path, index=False)
+    return (job.symbol, len(full))
 
 
 def _update_eod_one(job: UpdateJob) -> tuple[str, int]:
@@ -216,21 +207,31 @@ def _update_eod_one(job: UpdateJob) -> tuple[str, int]:
     kite.set_access_token()
     out_path = Path(job.out_path)
     last_dt = last_csv_datetime(out_path)
-    to_date = datetime.now().date()
+    to_date = job.to_date or datetime.now().date()
     if last_dt is None:
         return (job.symbol, 0)
-    from_date = (last_dt.date() - timedelta(days=5))
+    from_date = last_dt.date() - timedelta(days=5)
     candles = fetch_eod_one(kite, job.token, from_date, to_date, delay_sec=job.delay)
-    header, existing = _read_existing_rows(out_path)
-    appended = [
-        [c.get("date"), c.get("open"), c.get("high"), c.get("low"), c.get("close"), c.get("volume", 0)]
-        for c in (candles or [])
-    ]
-    n = _merge_write_csv(out_path, existing + appended, header)
-    return (job.symbol, n)
+    try:
+        old = read_base_ohlcv_15m(out_path)
+    except Exception:
+        old = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+    appended = pd.DataFrame(
+        [
+            [c.get("date"), c.get("open"), c.get("high"), c.get("low"), c.get("close"), c.get("volume", 0)]
+            for c in (candles or [])
+        ],
+        columns=["date", "open", "high", "low", "close", "volume"],
+    )
+    full = pd.concat([old, appended], ignore_index=True)
+    full["date"] = coerce_datetime_ist(full["date"])
+    full = full.sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
+    full = enrich_eod_df(full)
+    full[COLS_EOD].to_csv(out_path, index=False)
+    return (job.symbol, len(full))
 
 
-def build_jobs(only: str, delay: float) -> list[UpdateJob]:
+def build_jobs(only: str, delay: float, to_date: Optional[date] = None) -> list[UpdateJob]:
     kite = ensure_session()
 
     jobs: list[UpdateJob] = []
@@ -245,7 +246,7 @@ def build_jobs(only: str, delay: float) -> list[UpdateJob]:
                 key = p.name.replace("_15min.csv", "")
                 if key in sym_map:
                     sym, tok = sym_map[key]
-                    jobs.append(UpdateJob("indices15", sym, int(tok), str(p), delay))
+                    jobs.append(UpdateJob("indices15", sym, int(tok), str(p), delay, to_date))
 
     if only in ("indices_eod", "all"):
         idx_dir = DATA / "indices" / "eod"
@@ -257,7 +258,7 @@ def build_jobs(only: str, delay: float) -> list[UpdateJob]:
                 key = p.name.replace("_eod.csv", "")
                 sym = slug_to_sym.get(key)
                 if sym:
-                    jobs.append(UpdateJob("indices_eod", sym, int(sym_to_tok[sym]), str(p), delay))
+                    jobs.append(UpdateJob("indices_eod", sym, int(sym_to_tok[sym]), str(p), delay, to_date))
 
     if only in ("fo15", "all"):
         # Prefer the current F&O-underlying list, but fall back to *any* NSE EQ symbol
@@ -277,14 +278,14 @@ def build_jobs(only: str, delay: float) -> list[UpdateJob]:
                 matched = False
                 for sym, tok in sym_to_tok.items():
                     if slug_15(sym) == key:
-                        jobs.append(UpdateJob("fo15", sym, int(tok), str(p), delay))
+                        jobs.append(UpdateJob("fo15", sym, int(tok), str(p), delay, to_date))
                         matched = True
                         break
                 if matched:
                     continue
                 for sym, tok in nse_eq.items():
                     if slug_15(sym) == key:
-                        jobs.append(UpdateJob("fo15", sym, int(tok), str(p), delay))
+                        jobs.append(UpdateJob("fo15", sym, int(tok), str(p), delay, to_date))
                         break
 
     if only in ("fo_eod", "all"):
@@ -305,11 +306,11 @@ def build_jobs(only: str, delay: float) -> list[UpdateJob]:
                 key = p.name.replace("_eod.csv", "")
                 sym = slug_to_sym.get(key)
                 if sym:
-                    jobs.append(UpdateJob("fo_eod", sym, int(sym_to_tok[sym]), str(p), delay))
+                    jobs.append(UpdateJob("fo_eod", sym, int(sym_to_tok[sym]), str(p), delay, to_date))
                     continue
                 sym2 = slug_to_sym_eq.get(key)
                 if sym2:
-                    jobs.append(UpdateJob("fo_eod", sym2, int(nse_eq[sym2]), str(p), delay))
+                    jobs.append(UpdateJob("fo_eod", sym2, int(nse_eq[sym2]), str(p), delay, to_date))
 
     return jobs
 
@@ -319,6 +320,12 @@ def main() -> int:
     ap.add_argument("--only", choices=("indices15", "indices_eod", "fo15", "fo_eod", "all"), default="all")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--delay", type=float, default=0.05, help="Delay between requests in seconds (default 0.05)")
+    ap.add_argument(
+        "--to-date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="End date for incremental fetches (default: today).",
+    )
     ap.add_argument(
         "--paths-file",
         default=None,
@@ -341,7 +348,10 @@ def main() -> int:
         print("Error:", str(e))
         return 1
 
-    jobs = build_jobs(args.only, args.delay)
+    target_to_date: Optional[date] = None
+    if args.to_date:
+        target_to_date = datetime.strptime(args.to_date, "%Y-%m-%d").date()
+    jobs = build_jobs(args.only, args.delay, to_date=target_to_date)
     # Prefer NIFTY 50 first for quick verification.
     jobs.sort(key=lambda j: (0 if j.symbol == "NIFTY 50" else 1, j.kind, j.symbol))
     if args.paths_file:

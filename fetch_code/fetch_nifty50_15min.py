@@ -17,12 +17,13 @@ from repo_paths import REPO_ROOT  # noqa: E402
 
 import os
 import sys
-import csv
 import time
 import argparse
 from datetime import datetime, timedelta, date
 
 # paths: bootstrap above
+
+from ohlc_indicators import write_15min_enriched_csv
 
 # Nifty 50 index instrument token (NSE)
 NIFTY50_TOKEN = 840269
@@ -96,18 +97,7 @@ def main():
     out_dir = os.path.join(base, "data", "indices", "15min")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "nifty_50_15min.csv")
-    with open(out_path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["date", "open", "high", "low", "close", "volume"])
-        for candle in sorted_candles:
-            w.writerow([
-                candle.get("date"),
-                candle.get("open"),
-                candle.get("high"),
-                candle.get("low"),
-                candle.get("close"),
-                candle.get("volume", 0),
-            ])
+    write_15min_enriched_csv(out_path, sorted_candles)
 
     first_ts = sorted_candles[0].get("date") if sorted_candles else None
     last_ts = sorted_candles[-1].get("date") if sorted_candles else None
