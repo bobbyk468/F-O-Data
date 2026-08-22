@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.zerodhadata.daily_refresh</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/brahmajikatragadda/Desktop/Zerodha_Data/jugaad-trader/scripts/cron_daily_refresh.sh</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/brahmajikatragadda/Desktop/Zerodha_Data/jugaad-trader</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/brahmajikatragadda</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>SCHEDULE_WORKERS</key>
+		<string>4</string>
+		<key>SCHEDULE_QUICK_INCREMENTAL</key>
+		<string>1</string>
+	</dict>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+		<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+		<dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+		<dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+		<dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+	</array>
+	<key>TimeZone</key>
+	<string>Asia/Kolkata</string>
+	<key>StandardOutPath</key>
+	<string>/Users/brahmajikatragadda/Desktop/Zerodha_Data/jugaad-trader/logs/launchd_daily_refresh.stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/brahmajikatragadda/Desktop/Zerodha_Data/jugaad-trader/logs/launchd_daily_refresh.stderr.log</string>
+</dict>
+</plist>

@@ -1,0 +1,11 @@
+{
+  "input": "/Users/brahmajikatragadda/Desktop/Zerodha_Data/jugaad-trader/data/indices/15min/nifty_50_15min.csv",
+  "bars": 25000,
+  "long_signals": 152,
+  "exit_signals": 152,
+  "lookback_bars": 1875,
+  "trades_closed": 152,
+  "mean_pnl_pct": 0.1542191377572007,
+  "median_pnl_pct": 0.09286956959084731,
+  "win_rate": 0.5921052631578947
+}
