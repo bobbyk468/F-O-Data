@@ -179,6 +179,21 @@ Resampled timeframes (30/45/60min) derived from 15min data are in `data/indices/
 
 ---
 
+## When Local Data Has Been Deleted
+
+If the `data/` directory was removed from the local filesystem (e.g. to free disk space after pushing to git), restore it before running the incremental pipeline. Without local files the scripts fall back to fetching full history from 2015, which takes hours.
+
+**Step 1 — Restore from git:**
+```bash
+git checkout HEAD -- data/
+```
+
+This restores all 757 tracked files from the latest commit (~5.9 GB, takes ~30–60 seconds).
+
+**Step 2 — Then run the normal pipeline** (Stages 1–4 above). The incremental scripts will resume from the last saved timestamp in each restored file and only fetch what's new.
+
+---
+
 ## Git Push
 
 After all four stages complete:
