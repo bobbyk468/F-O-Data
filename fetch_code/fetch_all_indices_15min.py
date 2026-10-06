@@ -15,6 +15,7 @@ for _d in (_REPO, _FC):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 from repo_paths import REPO_ROOT  # noqa: E402
+from kite_retry import historical_with_retry  # noqa: E402
 
 import os
 import re
@@ -90,17 +91,7 @@ def fetch_15min_for_instrument(kite, instrument_token, from_date, to_date, delay
     current_start = from_date
     while current_start <= to_date:
         current_end = min(current_start + timedelta(days=CHUNK_DAYS), to_date)
-        try:
-            chunk = kite.historical_data(
-                instrument_token,
-                current_start,
-                current_end,
-                interval="15minute",
-            )
-        except Exception as e:
-            chunk = []
-            if "TokenException" in str(type(e).__name__) or "Invalid" in str(e):
-                raise
+        chunk = historical_with_retry(kite, instrument_token, current_start, current_end, "15minute")
         if chunk:
             all_candles.extend(chunk)
         current_start = current_end + timedelta(days=1)

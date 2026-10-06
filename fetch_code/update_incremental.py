@@ -53,6 +53,7 @@ from jugaad_trader import Zerodha
 
 import pandas as pd
 
+from kite_retry import FetchError
 from ohlc_indicators import (
     COLS_15M,
     COLS_EOD,
@@ -182,7 +183,11 @@ def _update_indices15_one(job: UpdateJob) -> tuple[str, int]:
         return (job.symbol, 0)
     # Fetch from last_date-1 day to handle partial/trading gaps
     from_date = last_dt.date() - timedelta(days=1)
-    candles = fetch_15min_for_instrument(kite, job.token, from_date, to_date, delay_sec=job.delay)
+    try:
+        candles = fetch_15min_for_instrument(kite, job.token, from_date, to_date, delay_sec=job.delay)
+    except FetchError as e:
+        print(f"[FAILED] {job.symbol}: {e} (file left unchanged)", flush=True)
+        return (job.symbol, -1)
     try:
         old = read_base_ohlcv_15m(out_path)
     except Exception:
@@ -211,7 +216,11 @@ def _update_eod_one(job: UpdateJob) -> tuple[str, int]:
     if last_dt is None:
         return (job.symbol, 0)
     from_date = last_dt.date() - timedelta(days=5)
-    candles = fetch_eod_one(kite, job.token, from_date, to_date, delay_sec=job.delay)
+    try:
+        candles = fetch_eod_one(kite, job.token, from_date, to_date, delay_sec=job.delay)
+    except FetchError as e:
+        print(f"[FAILED] {job.symbol}: {e} (file left unchanged)", flush=True)
+        return (job.symbol, -1)
     try:
         old = read_base_ohlcv_15m(out_path)
     except Exception:
@@ -418,7 +427,11 @@ def main() -> int:
             raise
 
     updated = sum(1 for _, n in results if n > 0)
+    failed = [sym for sym, n in results if n < 0]
     print(f"Done. Updated {updated}/{len(results)} files.")
+    if failed:
+        print(f"FAILED ({len(failed)}): {', '.join(failed)} -- re-run to retry; those files were not modified.")
+        return 1
     return 0
 
 

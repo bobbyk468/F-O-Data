@@ -24,6 +24,7 @@ for _d in (_REPO, _FC):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 from repo_paths import REPO_ROOT  # noqa: E402
+from kite_retry import historical_with_retry  # noqa: E402
 
 import os
 import re
@@ -180,17 +181,7 @@ def fetch_1min_for_instrument(kite, instrument_token, start_dt: datetime, end_da
         t = day_start if d > start_dt.date() else max(day_start, start_dt)
         while t <= day_end:
             t_end = min(t + timedelta(minutes=CHUNK_MINUTES), day_end)
-            try:
-                chunk = kite.historical_data(
-                    instrument_token,
-                    t,
-                    t_end,
-                    interval="minute",
-                )
-            except Exception as e:
-                chunk = []
-                if "TokenException" in str(type(e).__name__) or "Invalid" in str(e):
-                    raise
+            chunk = historical_with_retry(kite, instrument_token, t, t_end, "minute")
             if chunk:
                 all_candles.extend(chunk)
             t = t_end + timedelta(minutes=1)

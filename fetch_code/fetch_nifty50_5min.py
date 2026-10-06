@@ -15,6 +15,7 @@ for _d in (_REPO, _FC):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 from repo_paths import REPO_ROOT  # noqa: E402
+from kite_retry import historical_with_retry  # noqa: E402
 
 import os
 import sys
@@ -63,16 +64,7 @@ def main():
         if current_end < current_start:
             break
         print(f"Fetching {current_start} to {current_end}...", end=" ", flush=True)
-        try:
-            chunk = kite.historical_data(
-                NIFTY50_TOKEN,
-                current_start,
-                current_end,
-                interval="5minute",
-            )
-        except Exception as e:
-            print(f"Error: {e}")
-            chunk = []
+        chunk = historical_with_retry(kite, NIFTY50_TOKEN, current_start, current_end, "5minute")
         if chunk:
             all_candles.extend(chunk)
             print(f"got {len(chunk)} candles (total {len(all_candles)})")

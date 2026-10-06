@@ -17,6 +17,7 @@ for _d in (_REPO, _FC):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 from repo_paths import REPO_ROOT  # noqa: E402
+from kite_retry import historical_with_retry  # noqa: E402
 
 import os
 import re
@@ -132,19 +133,9 @@ def get_fo_symbol_to_token(kite):
 
 
 def fetch_eod_one(kite, instrument_token, from_date, to_date, delay_sec=0.0035):
-    try:
-        data = kite.historical_data(
-            instrument_token,
-            from_date,
-            to_date,
-            interval="day",
-        )
-    except Exception as e:
-        data = []
-        if "TokenException" in str(type(e).__name__) or "Invalid" in str(e):
-            raise
+    data = historical_with_retry(kite, instrument_token, from_date, to_date, "day")
     time.sleep(delay_sec)
-    return data or []
+    return data
 
 
 def save_eod_csv(candles, out_path):
