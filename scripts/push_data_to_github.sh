@@ -12,7 +12,14 @@ cd "$ROOT"
 REMOTE_BRANCH="${GIT_REMOTE_BRANCH:-main}"
 REMOTE="${GIT_REMOTE:-origin}"
 
-git add data/
+# Stage only new/modified files. Tracked files that are absent from disk (e.g.
+# data deleted locally to save space) must NOT be staged as deletions.
+git add --ignore-removal -- data/
+
+ABSENT="$(git ls-files --deleted -- data | wc -l | tr -d ' ')"
+if [[ "$ABSENT" != "0" ]]; then
+  echo "Note: $ABSENT tracked data files are not on disk; leaving them untouched in git."
+fi
 
 if git diff --cached --quiet; then
   echo "No data changes to commit."
