@@ -28,19 +28,34 @@ OUTPUT_FILE_1HR = DIR_1HR / "nifty_50_1hr.csv"
 OUTPUT_FILE = OUTPUT_FILE_30MIN  # default
 
 
-def _resample_ohlcv(
-    df: pd.DataFrame,
-    rule: str,
-    offset: pd.Timedelta,
-) -> pd.DataFrame:
-    """Resample OHLCV with given rule and offset. df must have datetime index."""
-    resampled = df.resample(rule, offset=offset).agg(
+def _agg(g: pd.DataFrame, **resample_kw) -> pd.DataFrame:
+    return g.resample(**resample_kw).agg(
         open=("open", "first"),
         high=("high", "max"),
         low=("low", "min"),
         close=("close", "last"),
         volume=("volume", "sum"),
-    ).dropna(how="all")
+    )
+
+
+def _resample_ohlcv(
+    df: pd.DataFrame,
+    rule: str,
+    offset: pd.Timedelta,
+    per_day: bool = False,
+) -> pd.DataFrame:
+    """Resample OHLCV with given rule and offset. df must have datetime index.
+
+    per_day=True restarts the bin grid at each session's first bar. Needed for rules
+    that do not divide 24h (35min, 50min); otherwise bins drift day to day.
+    """
+    if per_day:
+        days = df.index.tz_convert("Asia/Kolkata").date
+        resampled = pd.concat(
+            [_agg(g, rule=rule, origin="start") for _, g in df.groupby(days)]
+        ).dropna(how="all")
+    else:
+        resampled = _agg(df, rule=rule, offset=offset).dropna(how="all")
     resampled = resampled.dropna(subset=["open", "high", "low", "close"])
     resampled = resampled.reset_index()
     resampled.rename(columns={"index": "date"}, inplace=True)
@@ -89,7 +104,7 @@ def resample_15min_to_35min(
     df = pd.read_csv(input_path)
     df["date"] = pd.to_datetime(df["date"], utc=True)
     df = df.set_index("date").sort_index()
-    resampled = _resample_ohlcv(df, "35min", pd.Timedelta(minutes=15))
+    resampled = _resample_ohlcv(df, "35min", pd.Timedelta(minutes=15), per_day=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     resampled.to_csv(output_path, index=False)
     print(f"Resampled {len(df):,} 15-min bars → {len(resampled):,} 35-min bars")
@@ -122,7 +137,7 @@ def resample_15min_to_50min(
     df = pd.read_csv(input_path)
     df["date"] = pd.to_datetime(df["date"], utc=True)
     df = df.set_index("date").sort_index()
-    resampled = _resample_ohlcv(df, "50min", pd.Timedelta(minutes=25))
+    resampled = _resample_ohlcv(df, "50min", pd.Timedelta(minutes=25), per_day=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     resampled.to_csv(output_path, index=False)
     print(f"Resampled {len(df):,} 15-min bars → {len(resampled):,} 50-min bars")
