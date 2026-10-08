@@ -213,9 +213,19 @@ def relogin_once() -> bool:
             return False
 
 
+def _detect_eol(path: str) -> str:
+    """Line ending of an existing file (so rewrites do not flip CRLF/LF and churn git); LF for new files."""
+    try:
+        with open(path, "rb") as f:
+            return "\r\n" if b"\r\n" in f.read(8192) else "\n"
+    except OSError:
+        return "\n"
+
+
 def _write_5min_csv(out_path: str, sorted_candles: list) -> None:
+    eol = _detect_eol(out_path)
     with open(out_path, "w", newline="") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator=eol)
         w.writerow(["date", "open", "high", "low", "close", "volume"])
         for c in sorted_candles:
             w.writerow(
@@ -272,6 +282,27 @@ def fetch_5min_for_instrument(kite, instrument_token, from_date, to_date):
     return all_candles
 
 
+def _rebase_bars(old_by_bar: Dict[str, dict], new_by_bar: Dict[str, dict]) -> Dict[str, dict]:
+    """Full-history new bars win; old-only bars are kept, scaled onto the new price basis."""
+    import pandas as pd
+    from ohlc_indicators import coerce_datetime_ist
+    from adjustment_check import rebase_merge
+
+    def frame(d):
+        df = pd.DataFrame(list(d.values()), columns=["date", "open", "high", "low", "close", "volume"])
+        df["date"] = coerce_datetime_ist(df["date"])
+        return df
+
+    merged = rebase_merge(frame(old_by_bar), frame(new_by_bar))
+    out: Dict[str, dict] = {}
+    for r in merged.itertuples(index=False):
+        out[_bar_key(r.date.to_pydatetime())] = {
+            "date": r.date.to_pydatetime(), "open": float(r.open), "high": float(r.high),
+            "low": float(r.low), "close": float(r.close), "volume": int(r.volume),
+        }
+    return out
+
+
 def fetch_one_index(
     kite,
     instrument_token,
@@ -304,6 +335,33 @@ def fetch_one_index(
         )
         return len(by_bar)
 
+    # Adjustment check: Kite re-adjusts all past prices after corporate actions. Re-download the
+    # overlapping days and compare; if the stored prices are on an older basis, refetch everything.
+    old_by_bar = None
+    if resume and by_bar:
+        from adjustment_check import judge_ratios
+
+        flagged, ratio, n_ov = False, None, 0
+        try:
+            probe = fetch_5min_for_instrument(
+                kite, instrument_token, effective_from, min(effective_from + timedelta(days=4), to_date)
+            )
+            ratios = []
+            for c in probe:
+                o = by_bar.get(_bar_key(c.get("date")))
+                if o and float(o.get("close") or 0) > 0 and float(c.get("close") or 0) > 0:
+                    ratios.append(float(c["close"]) / float(o["close"]))
+            flagged, ratio, n_ov = judge_ratios(ratios)
+        except Exception as e:
+            print(f"  (adjustment check skipped: {e})", flush=True)
+        if flagged:
+            print(
+                f"  [ADJUSTED] prices re-adjusted (new/old close = {ratio:.4f} over {n_ov} bars) "
+                f"-> refetching full history from {from_date}",
+                flush=True,
+            )
+            old_by_bar, by_bar, effective_from = by_bar, {}, from_date
+
     period_list = []
     d = effective_from
     while d <= to_date:
@@ -311,12 +369,14 @@ def fetch_one_index(
         period_list.append((d, period_end))
         d = period_end + timedelta(days=1)
 
+    failed = False
     for period_start, period_end in period_list:
         print(f"  {period_start}..{period_end}...", end=" ", flush=True)
         try:
             candles = fetch_5min_for_instrument(kite, instrument_token, period_start, period_end)
         except Exception as e:
             print(f"Error: {e}")
+            failed = True
             break
         for c in candles:
             ts = c.get("date")
@@ -326,9 +386,15 @@ def fetch_one_index(
             if k:
                 by_bar[k] = c
         print(f"{len(candles)}", flush=True)
-        if by_bar:
+        if by_bar and old_by_bar is None:
             sorted_candles = [by_bar[k] for k in sorted(by_bar.keys())]
             _write_5min_csv(out_path, sorted_candles)
+
+    if old_by_bar is not None:
+        if failed or not by_bar:
+            print("  Full refetch incomplete -- existing file left unchanged.", flush=True)
+            return len(old_by_bar)
+        by_bar = _rebase_bars(old_by_bar, by_bar)
 
     if not by_bar:
         return 0

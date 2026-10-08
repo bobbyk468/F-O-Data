@@ -194,6 +194,26 @@ This restores all 757 tracked files from the latest commit (~5.9 GB, takes ~30â€
 
 ---
 
+## Price Re-adjustment Check (automatic)
+
+Kite re-adjusts **all past prices** after a corporate action (dividend, split, bonus, demerger). An incremental
+update that only appends new bars would then leave a price jump inside the file (seen on 71 stocks: HINDPETRO ~5%,
+TRENT 1.5x, VEDL 1.9x). Every incremental updater (`update_incremental.py` for 15min/EOD and
+`fetch_all_indices_5min.py` / `fetch_fo_stocks_5min.py` for 5min) therefore compares the bars it re-downloads
+against the stored ones (`fetch_code/adjustment_check.py`):
+
+- If the median close differs by more than 0.05% and at least half the overlapping bars differ, it prints
+  `[ADJUSTED] SYMBOL: prices re-adjusted (new/old close = 0.9709 ...) -> refetching full history` and refetches the
+  symbol's whole history on the new basis.
+- Old bars the API no longer returns (after-hours bars of special sessions) are kept, scaled onto the new basis.
+- If the full refetch fails part-way, the existing file is left untouched (`[FAILED] ... file left unchanged` /
+  `Full refetch incomplete`).
+- 1min files are not covered (no incremental updater); after a corporate action they still need a manual refetch.
+
+Run the tests with `.venv/bin/python -m pytest tests/test_adjustment_check.py`.
+
+---
+
 ## Git Push
 
 After all four stages complete:

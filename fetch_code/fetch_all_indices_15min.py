@@ -85,12 +85,12 @@ def get_index_instruments(kite):
     ]
 
 
-def fetch_15min_for_instrument(kite, instrument_token, from_date, to_date, delay_sec=0.0035):
-    """Fetch 15min data in 4-day chunks. Returns list of candle dicts. delay_sec between requests."""
+def fetch_15min_for_instrument(kite, instrument_token, from_date, to_date, delay_sec=0.0035, chunk_days=CHUNK_DAYS):
+    """Fetch 15min data in chunk_days-day chunks (default 4). Returns list of candle dicts."""
     all_candles = []
     current_start = from_date
     while current_start <= to_date:
-        current_end = min(current_start + timedelta(days=CHUNK_DAYS), to_date)
+        current_end = min(current_start + timedelta(days=chunk_days), to_date)
         chunk = historical_with_retry(kite, instrument_token, current_start, current_end, "15minute")
         if chunk:
             all_candles.extend(chunk)

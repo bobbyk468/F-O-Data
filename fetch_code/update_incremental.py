@@ -53,6 +53,7 @@ from jugaad_trader import Zerodha
 
 import pandas as pd
 
+from adjustment_check import frames_readjusted, rebase_merge
 from kite_retry import FetchError
 from ohlc_indicators import (
     COLS_15M,
@@ -172,6 +173,29 @@ class UpdateJob:
     to_date: Optional[date] = None
 
 
+_OHLCV = ["date", "open", "high", "low", "close", "volume"]
+FULL_15M_START = date(2015, 9, 1)
+FULL_EOD_START = date(2000, 1, 1)
+
+
+def _candles_df(candles) -> pd.DataFrame:
+    df = pd.DataFrame(
+        [[c.get("date"), c.get("open"), c.get("high"), c.get("low"), c.get("close"), c.get("volume", 0)] for c in (candles or [])],
+        columns=_OHLCV,
+    )
+    df["date"] = coerce_datetime_ist(df["date"])
+    return df.sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
+
+def _fetch_eod_full(kite, token: int, start: date, end: date, delay: float) -> list:
+    out, cur = [], start
+    while cur <= end:  # Kite caps daily requests at 2000 days
+        ce = min(cur + timedelta(days=1500), end)
+        out.extend(fetch_eod_one(kite, token, cur, ce, delay_sec=delay))
+        cur = ce + timedelta(days=1)
+    return out
+
+
 def _update_indices15_one(job: UpdateJob) -> tuple[str, int]:
     kite = Zerodha()
     kite.set_access_token()
@@ -192,16 +216,21 @@ def _update_indices15_one(job: UpdateJob) -> tuple[str, int]:
         old = read_base_ohlcv_15m(out_path)
     except Exception:
         old = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
-    appended = pd.DataFrame(
-        [
-            [c.get("date"), c.get("open"), c.get("high"), c.get("low"), c.get("close"), c.get("volume", 0)]
-            for c in (candles or [])
-        ],
-        columns=["date", "open", "high", "low", "close", "volume"],
-    )
-    full = pd.concat([old, appended], ignore_index=True)
-    full["date"] = coerce_datetime_ist(full["date"])
-    full = full.sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
+    old["date"] = coerce_datetime_ist(old["date"])
+    appended = _candles_df(candles)
+    flagged, ratio, n_ov = frames_readjusted(old, appended)
+    if flagged:
+        print(f"[ADJUSTED] {job.symbol}: prices re-adjusted (new/old close = {ratio:.4f} over {n_ov} bars) -> refetching full history", flush=True)
+        first = old["date"].min().date()
+        try:
+            kite_full = fetch_15min_for_instrument(kite, job.token, min(FULL_15M_START, first), to_date, delay_sec=job.delay, chunk_days=55)
+        except FetchError as e:
+            print(f"[FAILED] {job.symbol}: full refetch failed: {e} (file left unchanged)", flush=True)
+            return (job.symbol, -1)
+        full = rebase_merge(old, _candles_df(kite_full))
+    else:
+        full = pd.concat([old, appended], ignore_index=True)
+        full = full.sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
     full = enrich_15min_df(full)
     full[COLS_15M].to_csv(out_path, index=False)
     return (job.symbol, len(full))
@@ -225,16 +254,21 @@ def _update_eod_one(job: UpdateJob) -> tuple[str, int]:
         old = read_base_ohlcv_15m(out_path)
     except Exception:
         old = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
-    appended = pd.DataFrame(
-        [
-            [c.get("date"), c.get("open"), c.get("high"), c.get("low"), c.get("close"), c.get("volume", 0)]
-            for c in (candles or [])
-        ],
-        columns=["date", "open", "high", "low", "close", "volume"],
-    )
-    full = pd.concat([old, appended], ignore_index=True)
-    full["date"] = coerce_datetime_ist(full["date"])
-    full = full.sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
+    old["date"] = coerce_datetime_ist(old["date"])
+    appended = _candles_df(candles)
+    flagged, ratio, n_ov = frames_readjusted(old, appended)
+    if flagged:
+        print(f"[ADJUSTED] {job.symbol}: prices re-adjusted (new/old close = {ratio:.4f} over {n_ov} bars) -> refetching full history", flush=True)
+        first = old["date"].min().date()
+        try:
+            eod_full = _fetch_eod_full(kite, job.token, min(FULL_EOD_START, first), to_date, job.delay)
+        except FetchError as e:
+            print(f"[FAILED] {job.symbol}: full refetch failed: {e} (file left unchanged)", flush=True)
+            return (job.symbol, -1)
+        full = rebase_merge(old, _candles_df(eod_full))
+    else:
+        full = pd.concat([old, appended], ignore_index=True)
+        full = full.sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
     full = enrich_eod_df(full)
     full[COLS_EOD].to_csv(out_path, index=False)
     return (job.symbol, len(full))
