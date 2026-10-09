@@ -6,7 +6,25 @@ Complete guide for refreshing all Zerodha market data. This document is intended
 
 ## Overview
 
-The pipeline runs in four sequential stages:
+**One command refreshes every timeframe** (1min, 5min, 15min, EOD and the derived NIFTY 50 20/30/35/45/50min + 1hr):
+
+```
+bash scripts/refresh_data.sh          # stages below, in order; keeps going if a stage fails and lists failures at the end
+bash scripts/daily_refresh.sh         # unattended wrapper: safety checks -> refresh -> push -> macOS notification
+NO_PUSH=1 bash scripts/daily_refresh.sh   # same without touching GitHub
+```
+
+`daily_refresh.sh` refuses to run if `data/` is not fully restored (see "When Local Data Has Been Deleted"), if less than 3GB
+is free, or if git has staged changes; it pushes only when every stage succeeded and every file is at the newest date.
+It logs to `logs/daily_refresh_YYYYMMDD.log` and writes the last result to `logs/last_run.txt` (~30 min per run).
+Run it after the 15:30 IST close. A scheduler must be able to read `~/Desktop`: plain macOS launchd jobs cannot
+(`Operation not permitted`) unless `/bin/bash` has Full Disk Access.
+
+Additional stages added after the original four (all in `refresh_data.sh`):
+`fetch_code/update_5min_stragglers.py` (5min stocks that left the F&O list), `fetch_code/build_nifty50_index_volume.py`,
+`fetch_code/update_1min.py` (extends the 1min files) and `data/indices/resample_15min_to_30min.py` (derived timeframes).
+
+The original pipeline runs in four sequential stages:
 
 | Stage | Script | Updates | Count |
 |-------|--------|---------|-------|
