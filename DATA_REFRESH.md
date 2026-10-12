@@ -24,6 +24,15 @@ Additional stages added after the original four (all in `refresh_data.sh`):
 `fetch_code/update_5min_stragglers.py` (5min stocks that left the F&O list), `fetch_code/build_nifty50_index_volume.py`,
 `fetch_code/update_1min.py` (extends the 1min files) and `data/indices/resample_15min_to_30min.py` (derived timeframes).
 
+**Parallelism:** the 5min indices and F&O stock stages run `--workers 4` (a process per worker, each with its own session;
+Kite allows ~3 requests/s so keep it at 4 or below). Output is buffered per symbol so log lines do not interleave. Full 5min
+stage: ~3 min instead of ~25 min.
+
+**1min for all stocks:** `fetch_code/backfill_1min_stocks.py --to-date YYYY-MM-DD --workers 4` builds a full-history 1min file
+for every stock that lacks one (start = first bar of its 5min file; resumable; ~65 min for 200 stocks, ~9GB). These files are
+kept **local only** via `.git/info/exclude` (`data/nifty50/1min/`, `data/other/1min/`), so `push_data_to_github.sh` does not
+stage them; the 39 originally tracked 1min files are unaffected. `update_1min.py` keeps all 1min files current each day.
+
 The original pipeline runs in four sequential stages:
 
 | Stage | Script | Updates | Count |

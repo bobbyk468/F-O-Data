@@ -404,6 +404,45 @@ def fetch_one_index(
     return len(sorted_candles)
 
 
+_WORKER_KITE = None
+
+
+def _fetch_job(job):
+    """Worker-process entry: fetch one symbol with its own session; returns (symbol, buffered output, candles or -1)."""
+    import contextlib
+    import io
+
+    global _WORKER_KITE
+    token, sym, from_date, to_date, out_dir, resume = job
+    buf = io.StringIO()
+    n = -1
+    with contextlib.redirect_stdout(buf):
+        try:
+            if _WORKER_KITE is None:
+                from jugaad_trader import Zerodha
+
+                _WORKER_KITE = Zerodha()
+                _WORKER_KITE.set_access_token()
+            print(f"{sym} (token {token})")
+            n = fetch_one_index(_WORKER_KITE, token, sym, from_date, to_date, out_dir, resume=resume)
+        except Exception as e:  # keep the other symbols going; the wrapper greps for "Error:"
+            print(f"Error: {sym}: {type(e).__name__}: {e}")
+    return sym, buf.getvalue(), n
+
+
+def fetch_many(jobs, workers):
+    """Run fetch_one_index for (token, sym, from_date, to_date, out_dir, resume) jobs in parallel; returns #errors."""
+    from multiprocessing import Pool
+
+    errors = 0
+    with Pool(max(1, min(int(workers), 8))) as pool:
+        for sym, out, n in pool.imap_unordered(_fetch_job, jobs):
+            print(out, end="" if out.endswith("\n") else "\n", flush=True)
+            if n < 0:
+                errors += 1
+    return errors
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch 5min spot data for NSE indices")
     parser.add_argument(
@@ -426,7 +465,7 @@ def main():
         type=int,
         default=1,
         metavar="N",
-        help="Ignored; fetches run sequentially (single process).",
+        help="Parallel worker processes (default 1 = sequential; 4 is safe for Kite's rate limit).",
     )
     parser.add_argument(
         "--from-date",
@@ -479,20 +518,20 @@ def main():
         if missing:
             print("Note: symbols not in NSE indices list (skipped):", missing)
 
-    if args.workers != 1:
-        print("Note: --workers is ignored; 5min fetch runs sequentially.\n")
-
     resume = not args.no_resume
     print(
         f"Fetching 5min data for {len(symbols)} indices from {from_date} to {to_date} "
-        f"(sequential, ~{CHUNK_DAYS}d per request; "
+        f"({'sequential' if args.workers <= 1 else str(args.workers) + ' workers'}, ~{CHUNK_DAYS}d per request; "
         f"{'resume/merge existing files' if resume else 'full refetch (--no-resume)'}).\n"
     )
 
-    for sym in symbols:
-        token = symbol_to_token[sym]
-        print(f"{sym} (token {token})")
-        fetch_one_index(kite, token, sym, from_date, to_date, out_dir, resume=resume)
+    if args.workers > 1:
+        fetch_many([(symbol_to_token[s], s, from_date, to_date, out_dir, resume) for s in symbols], args.workers)
+    else:
+        for sym in symbols:
+            token = symbol_to_token[sym]
+            print(f"{sym} (token {token})")
+            fetch_one_index(kite, token, sym, from_date, to_date, out_dir, resume=resume)
     print("\nDone.")
     return 0
 

@@ -18,7 +18,7 @@ from repo_paths import REPO_ROOT  # noqa: E402
 import os
 import argparse
 from datetime import datetime, date
-from fetch_code.fetch_all_indices_5min import fetch_one_index, DEFAULT_START_DATE
+from fetch_code.fetch_all_indices_5min import fetch_many, fetch_one_index, DEFAULT_START_DATE
 
 
 def _load_nifty50_symbols():
@@ -79,7 +79,7 @@ def main():
         type=int,
         default=1,
         metavar="N",
-        help="Ignored; fetches run sequentially.",
+        help="Parallel worker processes (default 1 = sequential; 4 is safe for Kite's rate limit).",
     )
     parser.add_argument(
         "--from-date",
@@ -129,15 +129,13 @@ def main():
     else:
         symbols = sorted(symbol_to_token.keys())
 
-    if args.workers != 1:
-        print("Note: --workers is ignored; 5min fetch runs sequentially.\n")
-
     print(
         f"Fetching 5min equity data for {len(symbols)} F&O stocks from {from_date} to {to_date}"
     )
     resume = not args.no_resume
     print(
-        f"Output: {data_dir}/nifty50/5min & .../other/5min (sequential, ~90d; "
+        f"Output: {data_dir}/nifty50/5min & .../other/5min "
+        f"({'sequential' if args.workers <= 1 else str(args.workers) + ' workers'}, ~90d; "
         f"{'resume/merge' if resume else 'full refetch'}).\n"
     )
 
@@ -145,10 +143,13 @@ def main():
         sub = "nifty50" if sym in nifty50 else "other"
         return os.path.join(data_dir, sub, "5min")
 
-    for sym in symbols:
-        token = symbol_to_token[sym]
-        print(f"{sym} (token {token})")
-        fetch_one_index(kite, token, sym, from_date, to_date, out_dir_for(sym), resume=resume)
+    if args.workers > 1:
+        fetch_many([(symbol_to_token[s], s, from_date, to_date, out_dir_for(s), resume) for s in symbols], args.workers)
+    else:
+        for sym in symbols:
+            token = symbol_to_token[sym]
+            print(f"{sym} (token {token})")
+            fetch_one_index(kite, token, sym, from_date, to_date, out_dir_for(sym), resume=resume)
     print("\nDone.")
     return 0
 

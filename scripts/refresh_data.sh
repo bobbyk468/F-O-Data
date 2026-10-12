@@ -48,8 +48,8 @@ if ! "$PY" -u fetch_code/test_login.py; then
   exit 2
 fi
 
-run_stage "5min indices"            "$PY" -u fetch_all_indices_5min.py --to-date "$TO_DATE"
-run_stage "5min F&O stocks"         "$PY" -u fetch_fo_stocks_5min.py --to-date "$TO_DATE"
+run_stage "5min indices"            "$PY" -u fetch_all_indices_5min.py --workers "$WORKERS" --to-date "$TO_DATE"
+run_stage "5min F&O stocks"         "$PY" -u fetch_fo_stocks_5min.py --workers "$WORKERS" --to-date "$TO_DATE"
 run_stage "5min stragglers"         "$PY" -u fetch_code/update_5min_stragglers.py --to-date "$TO_DATE"
 run_stage "NIFTY 50 aggregate volume" "$PY" -u fetch_code/build_nifty50_index_volume.py
 run_stage "15min + EOD"             "$PY" -u fetch_code/update_incremental.py --only all --workers "$WORKERS" --delay 0.05 --to-date "$TO_DATE"
