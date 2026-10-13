@@ -1,6 +1,6 @@
 """Tests for Kite price re-adjustment detection and the 5min full-refetch path. Run: .venv/bin/python -m pytest tests/test_adjustment_check.py"""
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -114,3 +114,72 @@ def test_5min_rewrite_preserves_line_endings(tmp_path):
         f5._write_5min_csv(str(path), [{"date": "2026-03-02 09:15:00+05:30", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 3}])
         raw = path.read_bytes()
         assert (b"\r\n" in raw) == (eol == "\r\n")
+
+
+def test_settling_revision_of_newest_daily_bars_is_not_a_readjustment():
+    # 2 of 4 overlapping daily bars revised by ~0.1-0.5% (Zerodha settling): must not trigger
+    assert judge_ratios([1.0, 1.0, 1.0030, 1.0050])[0] is False
+    old = _frame([[f"2026-10-0{d} 04:00:00+00:00", 100, 101, 99, 100.0, 1] for d in range(5, 9)] +
+                 [["2026-10-09 04:00:00+00:00", 100, 101, 99, 100.0, 1], ["2026-10-12 04:00:00+00:00", 100, 101, 99, 100.0, 1]])
+    new = old.copy(); new.loc[new.index[-2:], "close"] = [100.4, 100.6]
+    assert frames_readjusted(old, new)[0] is False
+    assert frames_readjusted(old, new, skip_last=2)[0] is False
+
+
+def test_real_readjustment_still_detected_even_when_newest_bars_are_skipped():
+    old = _frame([[f"2026-10-0{d} 04:00:00+00:00", 100, 101, 99, 100.0, 1] for d in range(5, 10)] + [["2026-10-12 04:00:00+00:00", 100, 101, 99, 100.0, 1]])
+    adj = old.copy(); adj[["open", "high", "low", "close"]] *= 0.97
+    assert frames_readjusted(old, adj, skip_last=2)[0] is True
+
+
+def _write_1min(path, days, eol="\n", level=100.0):
+    rows = ["date,open,high,low,close,volume"]
+    for d in days:
+        for m in range(375):
+            ts = datetime(2026, 1, 1, 9, 15, tzinfo=IST) + timedelta(days=d, minutes=m)
+            rows.append(f"{ts.isoformat(sep=' ')},{level},{level + 1},{level - 1},{level},10")
+    path.write_bytes((eol.join(rows) + eol).encode())
+
+
+class Fake1min:
+    """Serves one bar per minute for whole sessions at a price level."""
+    def __init__(self, level):
+        self.level, self.calls = level, 0
+
+    def historical_data(self, token, start, end, interval):
+        self.calls += 1
+        out = []
+        for d in range((end - start).days + 1):
+            day = start + timedelta(days=d)
+            for m in range(375):
+                ts = datetime(day.year, day.month, day.day, 9, 15, tzinfo=IST) + timedelta(minutes=m)
+                out.append({"date": ts, "open": self.level, "high": self.level + 1, "low": self.level - 1, "close": self.level, "volume": 10})
+        return out
+
+
+def test_1min_tail_splice_matches_full_merge(tmp_path):
+    import update_1min as u
+    for eol in ("\n", "\r\n"):
+        p = tmp_path / f"x{len(eol)}_1min.csv"
+        _write_1min(p, range(0, 200), eol)                       # ~75k rows, > 2 * TAIL_BYTES
+        assert p.stat().st_size > 2 * u.TAIL_BYTES
+        last = date(2026, 1, 1) + timedelta(days=199)
+        to = last + timedelta(days=2)
+        name, added = u.update_file(Fake1min(100.0), p, 1, to, 0)
+        df = pd.read_csv(p)
+        days = pd.to_datetime(df["date"], utc=True).dt.tz_convert("Asia/Kolkata").dt.date
+        assert days.min() == date(2026, 1, 1) and days.max() == to
+        assert len(df) == 202 * 375 and not df["date"].duplicated().any()
+        assert (b"\r\n" in p.read_bytes()[:4096]) == (eol == "\r\n")
+
+
+def test_1min_readjusted_prices_fall_back_to_full_refetch(tmp_path):
+    import update_1min as u
+    p = tmp_path / "y_1min.csv"
+    _write_1min(p, range(0, 200), "\n", level=100.0)
+    last = date(2026, 1, 1) + timedelta(days=199)
+    # API now serves the same history 3% lower for every day -> detected, whole file rebuilt on the new basis
+    kite = Fake1min(97.0)
+    u.update_file(kite, p, 1, last + timedelta(days=1), 0)
+    df = pd.read_csv(p)
+    assert set(df["close"]) == {97.0}

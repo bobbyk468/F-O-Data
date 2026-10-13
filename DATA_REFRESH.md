@@ -28,6 +28,12 @@ Additional stages added after the original four (all in `refresh_data.sh`):
 Kite allows ~3 requests/s so keep it at 4 or below). Output is buffered per symbol so log lines do not interleave. Full 5min
 stage: ~3 min instead of ~25 min.
 
+**1min update speed:** `update_1min.py --workers 4` re-downloads from each file's last session and, unless prices were
+re-adjusted, splices the merged last session(s) onto the old file tail (copy + atomic replace; no full parse of the
+~55MB CSV). Falls back to the full read/merge/rewrite on re-adjustment, small files or any error. All 248 files: ~2.5 min.
+Daily bars are provisional right after the close (Zerodha revises close/volume by up to ~1% when it settles them), so the
+daily re-adjustment check ignores the newest 2 stored bars and compares a 15-day overlap.
+
 **1min for all stocks:** `fetch_code/backfill_1min_stocks.py --to-date YYYY-MM-DD --workers 4` builds a full-history 1min file
 for every stock that lacks one (start = first bar of its 5min file; resumable; ~65 min for 200 stocks, ~9GB). These files are
 kept **local only** via `.git/info/exclude` (`data/nifty50/1min/`, `data/other/1min/`), so `push_data_to_github.sh` does not

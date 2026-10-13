@@ -13,22 +13,32 @@ TOL = 5e-4  # 0.05% close-to-close difference on overlapping bars counts as "re-
 PRICE_COLS = ["open", "high", "low", "close"]
 
 
+SHARE = 0.75  # a real re-adjustment moves (nearly) every overlapping bar by the same factor
+
+
 def judge_ratios(ratios, tol: float = TOL, min_n: int = 2):
     """(re_adjusted, median_ratio, n) from new_close/old_close ratios of overlapping bars.
 
-    Needs at least ``min_n`` usable bars, a median off by more than ``tol`` and at least half of the
-    bars off by more than ``tol`` (so one in-progress or corrected bar cannot trigger a refetch).
+    Needs at least ``min_n`` usable bars, a median off by more than ``tol`` and at least 75% of the
+    bars off by more than ``tol``, so a couple of revised or in-progress bars cannot trigger a refetch.
     """
     r = np.asarray([x for x in ratios if x is not None and np.isfinite(x) and x > 0], dtype=float)
     if len(r) < min_n:
         return False, None, len(r)
     med = float(np.median(r))
     share = float(np.mean(np.abs(r - 1.0) > tol))
-    return (abs(med - 1.0) > tol and share >= 0.5), med, len(r)
+    return (abs(med - 1.0) > tol and share >= SHARE), med, len(r)
 
 
-def frames_readjusted(old: pd.DataFrame, new: pd.DataFrame, tol: float = TOL, min_n: int = 2):
-    """Compare overlapping bars of two OHLCV frames with tz-aware ``date`` columns."""
+def frames_readjusted(old: pd.DataFrame, new: pd.DataFrame, tol: float = TOL, min_n: int = 2, skip_last: int = 0):
+    """Compare overlapping bars of two OHLCV frames with tz-aware ``date`` columns.
+
+    ``skip_last`` ignores the newest N stored bars: daily bars written soon after the close are provisional
+    (Zerodha revises close and volume by up to ~1% when it settles them), so they are not evidence of a
+    re-adjustment.
+    """
+    if skip_last:
+        old = old.sort_values("date").iloc[:-skip_last]
     m = old[["date", "close"]].merge(new[["date", "close"]], on="date", suffixes=("_o", "_n"))
     m = m[(m.close_o > 0) & (m.close_n > 0)]
     return judge_ratios((m.close_n / m.close_o).tolist(), tol, min_n)

@@ -244,7 +244,7 @@ def _update_eod_one(job: UpdateJob) -> tuple[str, int]:
     to_date = job.to_date or datetime.now().date()
     if last_dt is None:
         return (job.symbol, 0)
-    from_date = last_dt.date() - timedelta(days=5)
+    from_date = last_dt.date() - timedelta(days=15)  # >=8 overlap bars for the re-adjustment check (newest 2 are skipped as provisional)
     try:
         candles = fetch_eod_one(kite, job.token, from_date, to_date, delay_sec=job.delay)
     except FetchError as e:
@@ -256,7 +256,7 @@ def _update_eod_one(job: UpdateJob) -> tuple[str, int]:
         old = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
     old["date"] = coerce_datetime_ist(old["date"])
     appended = _candles_df(candles)
-    flagged, ratio, n_ov = frames_readjusted(old, appended)
+    flagged, ratio, n_ov = frames_readjusted(old, appended, skip_last=2)
     if flagged:
         print(f"[ADJUSTED] {job.symbol}: prices re-adjusted (new/old close = {ratio:.4f} over {n_ov} bars) -> refetching full history", flush=True)
         first = old["date"].min().date()

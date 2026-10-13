@@ -53,7 +53,7 @@ run_stage "5min F&O stocks"         "$PY" -u fetch_fo_stocks_5min.py --workers "
 run_stage "5min stragglers"         "$PY" -u fetch_code/update_5min_stragglers.py --to-date "$TO_DATE"
 run_stage "NIFTY 50 aggregate volume" "$PY" -u fetch_code/build_nifty50_index_volume.py
 run_stage "15min + EOD"             "$PY" -u fetch_code/update_incremental.py --only all --workers "$WORKERS" --delay 0.05 --to-date "$TO_DATE"
-run_stage "1min"                    "$PY" -u fetch_code/update_1min.py --to-date "$TO_DATE"
+run_stage "1min"                    "$PY" -u fetch_code/update_1min.py --workers "$WORKERS" --to-date "$TO_DATE"
 run_stage "derived NIFTY 50 timeframes" "$PY" -u data/indices/resample_15min_to_30min.py
 
 echo "=== refresh ${TO_DATE} finished $(date '+%Y-%m-%d %H:%M:%S %Z') ==="
