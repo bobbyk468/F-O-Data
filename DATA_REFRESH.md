@@ -34,6 +34,14 @@ re-adjusted, splices the merged last session(s) onto the old file tail (copy + a
 Daily bars are provisional right after the close (Zerodha revises close/volume by up to ~1% when it settles them), so the
 daily re-adjustment check ignores the newest 2 stored bars and compares a 15-day overlap.
 
+**Renamed / retired stocks:** stems listed in `config/retired_symbols.txt` (currently `ltim` -> LTM, `icicipruli` -> ICICILIFE)
+are skipped by the 1min and straggler updaters and are not counted as stale by `daily_refresh.sh`. When Zerodha renames a
+stock the old name loses its instrument token (the 1min updater would fail on it) while the series continues under the new
+name: create the new-name files (same token, identical prices), then add the old stem to that file.
+
+**Network errors:** the 5min fetcher retries timeouts, dropped connections and DNS errors up to 6 times with backoff; if a
+stage still has errors the wrapper does not push, and the next run resumes from what is on disk.
+
 **1min for all stocks:** `fetch_code/backfill_1min_stocks.py --to-date YYYY-MM-DD --workers 4` builds a full-history 1min file
 for every stock that lacks one (start = first bar of its 5min file; resumable; ~65 min for 200 stocks, ~9GB). These files are
 kept **local only** via `.git/info/exclude` (`data/nifty50/1min/`, `data/other/1min/`), so `push_data_to_github.sh` does not

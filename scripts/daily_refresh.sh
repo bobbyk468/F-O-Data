@@ -90,6 +90,16 @@ fi
 STALE="$(.venv/bin/python - <<'EOF'
 import glob, os
 from collections import defaultdict
+retired = set()
+try:
+    for line in open("config/retired_symbols.txt"):
+        line = line.split("#")[0].strip()
+        if line:
+            retired.add(line.lower())
+except OSError:
+    pass
+def stem(p):
+    return os.path.basename(p).rsplit("_", 1)[0]
 def last_day(p):
     with open(p, "rb") as f:
         f.seek(0, 2); size = f.tell(); f.seek(max(0, size - 400))
@@ -99,7 +109,7 @@ stale = []
 for tf in ("1min", "5min", "15min", "eod"):
     d = {p: last_day(p) for p in glob.glob(f"data/*/{tf}/*_{tf}.csv")}
     newest = max(d.values())
-    stale += [f"{os.path.basename(p)}({v})" for p, v in d.items() if v < newest and not os.path.basename(p).startswith("ltim")]
+    stale += [f"{os.path.basename(p)}({v})" for p, v in d.items() if v < newest and stem(p) not in retired]
 print(" ".join(stale))
 EOF
 )"

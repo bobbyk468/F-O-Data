@@ -22,6 +22,7 @@ import argparse
 from datetime import datetime
 
 from fetch_code.fetch_all_indices_5min import DEFAULT_START_DATE, fetch_one_index, last_csv_datetime, slug
+from update_1min import retired_symbols
 
 
 def main() -> int:
@@ -33,7 +34,12 @@ def main() -> int:
     files = sorted(list(DATA_DIR.glob("nifty50/5min/*_5min.csv")) + list(DATA_DIR.glob("other/5min/*_5min.csv")))
     last = {f: last_csv_datetime(str(f)) for f in files}
     newest = max((d for d in last.values() if d), default=None)
-    stale = [f for f in files if last[f] is not None and newest is not None and last[f].date() < newest.date()]
+    retired = retired_symbols()
+    stale = [
+        f for f in files
+        if last[f] is not None and newest is not None and last[f].date() < newest.date()
+        and f.name[: -len('_5min.csv')] not in retired
+    ]
     if not stale:
         print("No stale 5min stock files.")
         return 0

@@ -28,6 +28,7 @@ from repo_paths import REPO_ROOT  # noqa: E402
 import csv
 import os
 import re
+import time
 import argparse
 from datetime import datetime, timedelta, date
 from typing import Any, Dict, Optional
@@ -193,6 +194,17 @@ def _is_token_error(e: Exception) -> bool:
     )
 
 
+def _is_transient_network_error(e: Exception) -> bool:
+    """Timeouts, dropped connections and DNS blips: safe to retry (a historical_data GET is idempotent)."""
+    name = type(e).__name__
+    msg = str(e)
+    return (
+        any(t in name for t in ("Timeout", "ConnectionError", "ConnectionReset", "ProxyError", "SSLError", "ChunkedEncodingError"))
+        or any(t in msg for t in ("Read timed out", "Max retries exceeded", "NameResolutionError", "Connection reset",
+                                  "Connection aborted", "Temporary failure", "nodename nor servname"))
+    )
+
+
 def _is_rate_limit_error(e: Exception) -> bool:
     msg = str(e).lower()
     return "too many" in msg or "429" in msg or "rate limit" in msg
@@ -245,6 +257,8 @@ def _historical_5min_chunk(kite, instrument_token, current_start, current_end, m
     token_retries = 0
     rate_strikes = 0
     max_rate_strikes = 25
+    net_retries = 0
+    max_net_retries = 6
     while True:
         try:
             return kite.historical_data(
@@ -266,6 +280,12 @@ def _historical_5min_chunk(kite, instrument_token, current_start, current_end, m
             if _is_rate_limit_error(e) and rate_strikes < max_rate_strikes:
                 print("\n  Rate limited; retrying chunk immediately...", flush=True)
                 rate_strikes += 1
+                continue
+            if _is_transient_network_error(e) and net_retries < max_net_retries:
+                net_retries += 1
+                wait = min(2 * net_retries, 12)
+                print(f"\n  Network error ({type(e).__name__}); retry {net_retries}/{max_net_retries} in {wait}s...", flush=True)
+                time.sleep(wait)
                 continue
             raise
 

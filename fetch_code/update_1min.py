@@ -42,6 +42,18 @@ def slug(symbol: str) -> str:
     return re.sub(r"[^A-Z0-9_]", "", s).lower() or "index"
 
 
+def retired_symbols() -> set:
+    """Stems listed in config/retired_symbols.txt (renamed or delisted stocks that are no longer updated)."""
+    p = _REPO / "config" / "retired_symbols.txt"
+    out = set()
+    if p.exists():
+        for line in p.read_text().splitlines():
+            line = line.split("#")[0].strip()
+            if line:
+                out.add(line.lower())
+    return out
+
+
 def fetch_range(kite, token, start: date, end: date, delay: float) -> pd.DataFrame:
     rows, cur = [], start
     while cur <= end:
@@ -171,9 +183,13 @@ def main() -> int:
     files = sorted(DATA_DIR.glob("*/1min/*_1min.csv"))
     print(f"Updating {len(files)} 1min files to {to_date} ({args.workers} worker(s))", flush=True)
     jobs, failed = [], []
+    retired = retired_symbols()
     for p in files:
         key = p.name[: -len("_1min.csv")]
         token = (idx if p.parent.parent.name == "indices" else eq).get(key)
+        if key in retired:
+            print(f"[retired] {key}: renamed/delisted, not updated", flush=True)
+            continue
         if token is None:
             print(f"FAILED {key}: no instrument token (file left unchanged)", flush=True)
             failed.append(key)

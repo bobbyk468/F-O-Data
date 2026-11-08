@@ -183,3 +183,32 @@ def test_1min_readjusted_prices_fall_back_to_full_refetch(tmp_path):
     u.update_file(kite, p, 1, last + timedelta(days=1), 0)
     df = pd.read_csv(p)
     assert set(df["close"]) == {97.0}
+
+
+def test_5min_chunk_retries_transient_network_errors_then_gives_up():
+    import requests
+    class Flaky5:
+        def __init__(self, fail_times, exc):
+            self.n, self.calls, self.exc = fail_times, 0, exc
+        def historical_data(self, *a, **k):
+            self.calls += 1
+            if self.calls <= self.n:
+                raise self.exc
+            return [{"date": 1}]
+    real_sleep = f5.time.sleep
+    f5.time.sleep = lambda s: None
+    try:
+        k = Flaky5(2, requests.exceptions.ReadTimeout("Read timed out. (read timeout=7)"))
+        assert f5._historical_5min_chunk(k, 1, date(2026, 3, 2), date(2026, 3, 2)) == [{"date": 1}] and k.calls == 3
+        k = Flaky5(99, requests.exceptions.ConnectionError("NameResolutionError: nodename nor servname provided"))
+        try:
+            f5._historical_5min_chunk(k, 1, date(2026, 3, 2), date(2026, 3, 2)); assert False
+        except requests.exceptions.ConnectionError:
+            assert k.calls == 7                       # 1 try + 6 retries, then the error surfaces
+        k = Flaky5(99, ValueError("bad request"))
+        try:
+            f5._historical_5min_chunk(k, 1, date(2026, 3, 2), date(2026, 3, 2)); assert False
+        except ValueError:
+            assert k.calls == 1                       # non-network errors are not retried
+    finally:
+        f5.time.sleep = real_sleep

@@ -1,0 +1,4 @@
+# File stems (lowercase, no timeframe suffix) whose data stopped because the stock was renamed or delisted.
+# The daily refresh skips them and does not count them as stale. Their data continues under the new name.
+ltim        # renamed LTM (2026-02); ltm_* files hold the full series
+icicipruli  # renamed ICICILIFE (2026-10); icicilife_* files hold the full series
